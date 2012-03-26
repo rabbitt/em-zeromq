@@ -53,44 +53,33 @@ module EventMachine
       # return: true is message was queued, false otherwise
       #
       def send_msg(*parts)
-        parts = Array(parts[0]) if parts.size == 0
+        messages = [*parts] # normalize to array
         sent = true
-        
-        # multipart
-        parts[0...-1].each do |msg|
-          sent = @socket.send_string(msg, ZMQ::NOBLOCK | ZMQ::SNDMORE)
-          if sent == false
-            break
-          end
-        end
-        
-        if sent
-          # all the previous parts were queued, send
-          # the last one
-          ret = @socket.send_string(parts[-1], ZMQ::NOBLOCK)
-          if ret < 0
-            raise "Unable to send message: #{ZMQ::Util.error_string}"
-          end
+
+        if messages.size == 1
+          sent = @socket.send(messages.first, ZMQ::NOBLOCK)
         else
-          # error while sending the previous parts
-          # register the socket for writability
-          self.notify_writable = true
-          sent = false
+          messages[0..-2].each do |message|
+            break unless (sent = @socket.send(message, ZMQ::SNDMORE | ZMQ::NOBLOCK))
+          end
+
+          if sent 
+            @socket.send(messages.last, ZMQ::NOBLOCK)
+          else
+            # error while sending the previous parts
+            # register the socket for writability
+            self.notify_writable = true
+            sent = false
+          end
         end
-        
+
         notify_readable()
         
         sent
       end
       
       def getsockopt(opt)
-        ret = []
-        rc = @socket.getsockopt(opt, ret)
-        unless ZMQ::Util.resultcode_ok?(rc)
-          raise ZMQOperationFailed, "getsockopt: #{ZMQ::Util.error_string}"
-        end
-
-        (ret.size == 1) ? ret[0] : ret    
+        @socket.getsockopt(opt)
       end
       
       def setsockopt(opt, value)
@@ -125,31 +114,19 @@ module EventMachine
         # be taken out.
         return unless readable?
          
-        loop do
-          msg_parts = []
-          msg       = get_message
-          if msg
-            msg_parts << msg
-            while @socket.more_parts?
-              msg = get_message
-              if msg
-                msg_parts << msg
-              else
-                raise "Multi-part message missing a message!"
-              end
-            end
-            
-            @handler.on_readable(self, msg_parts)
-          else
-            break
-          end
+        msg_parts = [].tap do |messages|
+          begin
+            messages << @socket.recv(ZMQ::NOBLOCK)
+          end while @socket.getsockopt(ZMQ::RCVMORE)
         end
+
+        @handler.on_readable(self, msg_parts)
       end
-      
+
       def notify_writable
         return unless writable?
         
-        # one a writable event is successfully received the socket
+        # once a writable event is successfully received the socket
         # should be accepting messages again so stop triggering
         # write events
         self.notify_writable = false
@@ -158,6 +135,7 @@ module EventMachine
           @handler.on_writable(self)
         end
       end
+
       def readable?
         (getsockopt(ZMQ::EVENTS) & ZMQ::POLLIN) == ZMQ::POLLIN
       end
@@ -172,12 +150,6 @@ module EventMachine
     
       # internal methods
 
-      def get_message
-        msg       = ZMQ::Message.new
-        msg_recvd = @socket.recv(msg, ZMQ::NOBLOCK)
-        msg_recvd != -1 ? msg : nil
-      end
-      
       # Detaches the socket from the EM loop,
       # then closes the socket
       def detach_and_close

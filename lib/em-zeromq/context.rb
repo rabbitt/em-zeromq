@@ -30,13 +30,11 @@ module EventMachine
       def socket(socket_type, handler = nil)
         zmq_socket = @context.socket(socket_type)
         
-        fd = []
-        if zmq_socket.getsockopt(ZMQ::FD, fd) < 0
-          raise "Unable to get socket FD: #{ZMQ::Util.error_string}"
+        if (fd = zmq_socket.getsockopt(ZMQ::FD)) < 0
+          raise "Unable to get socket FD"
         end
         
-        
-        EM.watch(fd[0], EventMachine::ZeroMQ::Socket, zmq_socket, socket_type, handler).tap do |s|
+        EM.watch(fd, EventMachine::ZeroMQ::Socket, zmq_socket, socket_type, handler).tap do |s|
           s.register_readable if READABLES.include?(socket_type)
           s.register_writable if WRITABLES.include?(socket_type)
           
