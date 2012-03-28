@@ -1,5 +1,5 @@
 require 'eventmachine'
-require 'ffi-rzmq'
+require 'zmq'
 
 module EmZeromq
 
