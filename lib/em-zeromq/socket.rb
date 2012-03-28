@@ -113,14 +113,16 @@ module EventMachine
         # I'm leaving this is because its in the docs, but it could probably
         # be taken out.
         return unless readable?
-         
-        msg_parts = [].tap do |messages|
-          begin
-            messages << @socket.recv(ZMQ::NOBLOCK)
-          end while @socket.getsockopt(ZMQ::RCVMORE)
-        end
+        
+        while readable?
+          msg_parts = [].tap do |messages|
+            begin
+              messages << @socket.recv(ZMQ::NOBLOCK)
+            end while @socket.getsockopt(ZMQ::RCVMORE)
+          end
 
-        @handler.on_readable(self, msg_parts)
+          @handler.on_readable(self, msg_parts)
+        end
       end
 
       def notify_writable
