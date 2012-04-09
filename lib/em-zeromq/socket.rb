@@ -21,7 +21,8 @@ module EventMachine
       map_sockopt(ZMQ::AFFINITY, :affinity)
       map_sockopt(ZMQ::SNDBUF, :sndbuf)
       map_sockopt(ZMQ::RCVBUF, :rcvbuf)
-      
+      map_sockopt(ZMQ::EVENTS, :events)
+
       # pgm
       map_sockopt(ZMQ::RATE, :rate)
       map_sockopt(ZMQ::RECOVERY_IVL, :recovery_ivl)
@@ -60,7 +61,8 @@ module EventMachine
           sent = @socket.send(messages.first, ZMQ::NOBLOCK)
         else
           messages[0..-2].each do |message|
-            break unless (sent = @socket.send(message, ZMQ::SNDMORE | ZMQ::NOBLOCK))
+            sent = @socket.send(message, ZMQ::SNDMORE | ZMQ::NOBLOCK)
+            break unless sent
           end
 
           if sent 
@@ -91,29 +93,15 @@ module EventMachine
         detach_and_close
       end
       
-      # Make this socket available for reads
       def register_readable
-        # Since ZMQ is event triggered I think this is necessary
-        if readable?
-          notify_readable
-        end
-        # Subscribe to EM read notifications
         self.notify_readable = true
       end
 
-      # Trigger on_readable when socket is readable
       def register_writable
-        # Subscribe to EM write notifications
         self.notify_writable = true
       end
 
       def notify_readable
-        # Not sure if this is actually necessary. I suppose it prevents us
-        # from having to to instantiate a ZMQ::Message unnecessarily.
-        # I'm leaving this is because its in the docs, but it could probably
-        # be taken out.
-        return unless readable?
-        
         while readable?
           msg_parts = [].tap do |messages|
             begin
@@ -127,25 +115,18 @@ module EventMachine
 
       def notify_writable
         return unless writable?
-        
-        # once a writable event is successfully received the socket
-        # should be accepting messages again so stop triggering
-        # write events
-        self.notify_writable = false
-        
+
         if @handler.respond_to?(:on_writable)
           @handler.on_writable(self)
         end
       end
 
       def readable?
-        (getsockopt(ZMQ::EVENTS) & ZMQ::POLLIN) == ZMQ::POLLIN
+        (events & ZMQ::POLLIN) == ZMQ::POLLIN
       end
 
       def writable?
-        return true
-        # ZMQ::EVENTS has issues in ZMQ HEAD, we'll ignore this till they're fixed
-        # (getsockopt(ZMQ::EVENTS) & ZMQ::POLLOUT) == ZMQ::POLLOUT
+        (events & ZMQ::POLLOUT) == ZMQ::POLLOUT
       end
      
     private
