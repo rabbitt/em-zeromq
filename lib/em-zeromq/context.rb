@@ -42,7 +42,10 @@ module EventMachine
         end
       end
       
+      def terminate
+        @context.close
+        @context = nil
+      end
     end
-    
   end
 end
