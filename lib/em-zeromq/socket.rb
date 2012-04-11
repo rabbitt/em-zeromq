@@ -88,11 +88,6 @@ module EventMachine
         @socket.setsockopt(opt, value)
       end
       
-      # cleanup when ending loop
-      def unbind
-        detach_and_close
-      end
-      
       def register_readable
         self.notify_readable = true
       end
@@ -122,22 +117,32 @@ module EventMachine
       end
 
       def readable?
-        (events & ZMQ::POLLIN) == ZMQ::POLLIN
+        notify_readable? && (events & ZMQ::POLLIN) == ZMQ::POLLIN
       end
 
       def writable?
-        (events & ZMQ::POLLOUT) == ZMQ::POLLOUT
+        notify_writable? && (events & ZMQ::POLLOUT) == ZMQ::POLLOUT
       end
-     
+
+      def close
+        @socket.close
+      end
+
+      # cleanup when ending loop
+      def unbind
+        detach_and_close
+      end
+      
     private
-    
       # internal methods
 
       # Detaches the socket from the EM loop,
       # then closes the socket
       def detach_and_close
         detach
-        @socket.close
+        # now wait to make sure it was detached
+        sleep 0.15 
+        close
       end
     end
   end
